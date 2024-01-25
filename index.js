@@ -7,13 +7,6 @@ const port = process.env.PORT || 5000;
 
 require('dotenv').config()
 app.use(cors())
-// const corsConfig = {
-//     origin: '',
-//     credentials: true,
-//     methods: ['GET', 'POST', 'PUT', 'DELETE']
-// }
-// app.use(cors(corsConfig))
-// app.options("", cors(corsConfig))
 app.use(express.json());
 
 app.get('/', (req, res) => {
@@ -34,14 +27,28 @@ const client = new MongoClient(uri, {
     }
 });
 
+
+
+const verifyJWT = (req, res, next) => {
+    const authorization = req.headers.authorization;
+    if (!authorization) {
+        return res.status(401).send({ error: true, message: 'Unauthorized Access' })
+    }
+    const token = authorization.split(' ')[1];
+    jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (error, decoded) => {
+        if (error) {
+            return res.status(401).send({ error: true, message: 'Unauthorized Access' })
+        }
+        req.decoded = decoded;
+        next();
+    })
+}
+
+
 async function run() {
     try {
         await client.connect();
 
-
-        app.get('/get', async (req, res) => {
-            res.send('hey man are you getting me?')
-        })
         // JWT
         app.post('/access-token', (req, res) => {
             const user = req.body;
@@ -69,10 +76,14 @@ async function run() {
             res.send(result);
         });
 
-        app.get('/bookings', async (req, res) => {
+        app.get('/bookings', verifyJWT, async (req, res) => {
+            const decoded = req.decoded;
+            if (decoded.email !== req.query.email) {
+                return res.status(403).send({ error: true, message: 'Invalid Access' })
+            }
             let query = {}
             if (req.query?.email) {
-                query = { customerEmail: req.query?.email }
+                query = { customerEmail: req.query.email }
             }
             const result = await bookingCollection.find(query).toArray();
             res.send(result);
@@ -108,7 +119,7 @@ async function run() {
 
 
         await client.db("admin").command({ ping: 1 });
-        console.log("Pinged your deployment. You successfully connected to MongoDB!");  
+        console.log("Pinged your deployment. You successfully connected to MongoDB!");
 
 
     } finally {
